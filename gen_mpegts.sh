@@ -101,7 +101,7 @@ esac
 
 # 生成默认输出文件名
 if [[ -z "$OUTPUT" ]]; then
-    OUTPUT="test_${RESOLUTION}_${CODEC}_${FPS}fps_${DURATION}s_${SAMPLING}.mpegts"
+    OUTPUT="test_${RESOLUTION}_${CODEC}_${FPS}fps_${DURATION}s_${SAMPLING}.ts"
 fi
 
 # 创建临时目录
