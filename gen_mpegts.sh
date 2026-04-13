@@ -137,7 +137,7 @@ BLOCK_W = WIDTH // GRID
 BLOCK_H = HEIGHT // GRID
 
 # 字体大小（相对于色块大小）
-FONT_SCALE = min(BLOCK_W, BLOCK_H) // 16
+FONT_SCALE = max(min(BLOCK_W, BLOCK_H) // 8, 5)
 
 # YUV值: 使用64个不同的亮度值和固定色度
 # 色块序号从0到63，对应Y值从16到235（ITU-R BT.601范围）
@@ -149,45 +149,55 @@ def get_yuv_values(idx):
     v = 128 + int(math.cos(idx * math.pi / 32) * 40)
     return y, u, v
 
-# 简单的位图字体（3x5数字）
+def get_contrast_y(y_val):
+    """返回与背景Y值对比度最大的文字Y值"""
+    if y_val > 128:
+        return 16
+    else:
+        return 235
+
+# 简单的位图字体（5x5数字，每行用低5位表示）
+CHAR_W = 5
+CHAR_H = 5
 DIGITS = {
-    '0': [0x7C, 0x82, 0x82, 0x82, 0x7C],
-    '1': [0x00, 0x84, 0xFE, 0x80, 0x00],
-    '2': [0xC4, 0xA2, 0x92, 0x92, 0x8C],
-    '3': [0x44, 0x82, 0x92, 0x92, 0x6C],
-    '4': [0x30, 0x28, 0x24, 0xFE, 0x20],
-    '5': [0x4E, 0x8A, 0x8A, 0x8A, 0x72],
-    '6': [0x78, 0x94, 0x92, 0x92, 0x60],
-    '7': [0x02, 0xE2, 0x12, 0x0A, 0x06],
-    '8': [0x6C, 0x92, 0x92, 0x92, 0x6C],
-    '9': [0x0C, 0x92, 0x92, 0x52, 0x3C],
+    '0': [0x0E, 0x11, 0x11, 0x11, 0x0E],
+    '1': [0x04, 0x06, 0x04, 0x04, 0x0E],
+    '2': [0x0E, 0x10, 0x0E, 0x01, 0x1F],
+    '3': [0x0E, 0x10, 0x0C, 0x10, 0x0E],
+    '4': [0x11, 0x11, 0x1F, 0x10, 0x10],
+    '5': [0x1F, 0x01, 0x0F, 0x10, 0x0F],
+    '6': [0x0E, 0x01, 0x0F, 0x11, 0x0E],
+    '7': [0x1F, 0x10, 0x08, 0x04, 0x04],
+    '8': [0x0E, 0x11, 0x0E, 0x11, 0x0E],
+    '9': [0x0E, 0x11, 0x1E, 0x10, 0x0E],
+    ',': [0x00, 0x00, 0x00, 0x02, 0x01],
 }
 
-def draw_char(frame, x, y, char, y_val, font_size):
+def draw_char(frame, x, y, char, text_y, scale):
     """在YUV frame上绘制字符"""
     if char not in DIGITS:
         return
     bitmap = DIGITS[char]
-    for row in range(5):
-        for col in range(3):
-            if bitmap[row] & (0x80 >> col):
-                # 绘制像素点
-                for dy in range(font_size // 5):
-                    for dx in range(font_size // 3):
-                        px = x + col * (font_size // 3) + dx
-                        py = y + row * (font_size // 5) + dy
+    for row in range(CHAR_H):
+        for col in range(CHAR_W):
+            if bitmap[row] & (0x10 >> col):
+                for dy in range(scale):
+                    for dx in range(scale):
+                        px = x + col * scale + dx
+                        py = y + row * scale + dy
                         if 0 <= px < WIDTH and 0 <= py < HEIGHT:
-                            frame[py][px] = y_val
+                            frame[py][px] = text_y
 
-def draw_text_centered(frame, bx, by, bw, bh, text, y_val, font_size):
+def draw_text_centered(frame, bx, by, bw, bh, text, text_y, scale):
     """在色块中心绘制文字"""
-    # 计算文字宽度（估算）
-    text_w = len(text) * (font_size // 3) * 3
-    text_h = font_size
+    char_pixel_w = CHAR_W * scale
+    gap = max(scale, 1)
+    text_w = len(text) * char_pixel_w + (len(text) - 1) * gap
+    text_h = CHAR_H * scale
     start_x = bx + (bw - text_w) // 2
     start_y = by + (bh - text_h) // 2
     for i, char in enumerate(text):
-        draw_char(frame, start_x + i * (font_size // 3) * 3, start_y, char, y_val, font_size)
+        draw_char(frame, start_x + i * (char_pixel_w + gap), start_y, char, text_y, scale)
 
 # 生成YUV444帧
 def generate_frame(frame_num):
@@ -210,14 +220,27 @@ def generate_frame(frame_num):
                 frame_u[py][px] = u_val
                 frame_v[py][px] = v_val
 
-        # 在色块中心绘制文字
+        # 在色块中心绘制文字（使用对比色）
+        text_y = get_contrast_y(y_val)
         text = str(idx)
-        draw_text_centered(frame_y, bx, by, BLOCK_W, BLOCK_H, text, y_val, FONT_SCALE)
-        # YUV值也显示在下方
+        draw_text_centered(frame_y, bx, by, BLOCK_W, BLOCK_H // 2, text, text_y, FONT_SCALE)
+        # YUV值显示在下方
         yuv_text = f"{y_val},{u_val},{v_val}"
-        draw_text_centered(frame_y, bx, by + BLOCK_H // 2, BLOCK_W, BLOCK_H // 2, yuv_text[:5], y_val, FONT_SCALE // 2)
+        sub_scale = max(FONT_SCALE // 2, 1)
+        draw_text_centered(frame_y, bx, by + BLOCK_H // 2, BLOCK_W, BLOCK_H // 2, yuv_text, text_y, sub_scale)
 
     return frame_y, frame_u, frame_v
+
+# 按采样格式对色度平面进行子采样
+def subsample(plane, sampling):
+    if sampling == "yuv444":
+        return plane
+    elif sampling == "yuv422":
+        # 水平2:1子采样
+        return [[row[x] for x in range(0, WIDTH, 2)] for row in plane]
+    else:  # yuv420
+        # 水平+垂直2:1子采样
+        return [[plane[y][x] for x in range(0, WIDTH, 2)] for y in range(0, HEIGHT, 2)]
 
 # 写入YUV文件
 total_frames = FPS * DURATION
@@ -227,11 +250,11 @@ with open(YUV_FILE, 'wb') as f:
         # 写入Y平面
         for row in frame_y:
             f.write(bytes(row))
-        # 写入U平面
-        for row in frame_u:
+        # 写入U平面（按采样格式子采样）
+        for row in subsample(frame_u, SAMPLING):
             f.write(bytes(row))
-        # 写入V平面
-        for row in frame_v:
+        # 写入V平面（按采样格式子采样）
+        for row in subsample(frame_v, SAMPLING):
             f.write(bytes(row))
 
 print(f"YUV生成完成: {total_frames}帧")
