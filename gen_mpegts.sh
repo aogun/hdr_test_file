@@ -99,6 +99,13 @@ case $CODEC in
     h265) ENCODER="libx265" ;;
 esac
 
+# H.264 profile 映射（避免 -qp 0 强制 High 4:4:4 Predictive）
+case $SAMPLING in
+    yuv444) H264_PROFILE="high444" ;;
+    yuv422) H264_PROFILE="high422" ;;
+    yuv420) H264_PROFILE="high" ;;
+esac
+
 # 生成默认输出文件名
 if [[ -z "$OUTPUT" ]]; then
     OUTPUT="test_${RESOLUTION}_${CODEC}_${FPS}fps_${DURATION}s_${SAMPLING}.ts"
@@ -270,9 +277,10 @@ case $CODEC in
         ffmpeg -hide_banner -loglevel error \
             -f rawvideo -pix_fmt $PIX_FMT -s ${WIDTH}x${HEIGHT} -r $FPS -i "$YUV_FILE" \
             -c:v $ENCODER \
+            -profile:v $H264_PROFILE \
             -g $FPS \
             -bf 0 \
-            -qp 0 \
+            -crf 18 \
             -preset ultrafast \
             -f mpegts \
             -y "$OUTPUT"
@@ -283,7 +291,7 @@ case $CODEC in
             -c:v $ENCODER \
             -g $FPS \
             -bf 0 \
-            -qp 0 \
+            -crf 18 \
             -preset ultrafast \
             -f mpegts \
             -y "$OUTPUT"

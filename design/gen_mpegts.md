@@ -20,7 +20,7 @@ Bash 脚本，用于生成包含 64 色块测试图案的 MPEGTS 格式视频文
 | 采样格式 | `-s` | `--sampling` | yuv420 | yuv444 / yuv422 / yuv420 |
 | 输出文件 | `-o` | `--output` | 自动生成 | 输出文件路径 |
 
-默认输出文件名格式：`test_{分辨率}_{编码}_{帧率}fps_{时长}s_{采样}.mpegts`
+默认输出文件名格式：`test_{分辨率}_{编码}_{帧率}fps_{时长}s_{采样}.ts`
 
 ## 分辨率映射
 
@@ -50,13 +50,23 @@ Bash 脚本，用于生成包含 64 色块测试图案的 MPEGTS 格式视频文
 
 ## 编码参数
 
+### 通用参数
+
 | 参数 | 值 | 说明 |
 |------|----|------|
 | `-g` | 等于 FPS | GOP 大小 = 1秒 |
 | `-bf` | 0 | 无 B 帧 |
-| `-qp` | 0 | 无损量化 |
+| `-crf` | 18 | 视觉无损质量（避免 -qp 0 强制 lossless profile） |
 | `-preset` | ultrafast | 最快编码速度 |
 | `-f` | mpegts | 输出容器格式 |
+
+### H.264 Profile 映射
+
+| 采样格式 | `-profile:v` | 实际 Profile |
+|----------|-------------|-------------|
+| yuv420 | high | Constrained Baseline ~ High（由 preset 决定） |
+| yuv422 | high422 | High 4:2:2 |
+| yuv444 | high444 | High 4:4:4 Predictive |
 
 ## 处理流程
 
