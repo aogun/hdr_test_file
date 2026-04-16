@@ -155,10 +155,27 @@ case $CODEC in
     h265) ENCODER="libx265" ;;
 esac
 
-# 无损编码 + HDR元数据（x265需通过 x265-params 保证元数据写入码流）
+# H.264 profile 映射（显式指定以避免依赖 encoder 默认值）
+case $SAMPLING in
+    yuv444) H264_PROFILE="high444" ;;
+    yuv422) H264_PROFILE="high422" ;;
+    yuv420)
+        # 根据 10/8-bit 选择 High10 或 High
+        if [[ $BIT_DEPTH == 10 ]]; then
+            H264_PROFILE="high10"
+        else
+            H264_PROFILE="high"
+        fi
+        ;;
+esac
+
+# 无损编码 + HDR元数据
+# 注意：H.264 的 -qp 0（真无损）会强制 High 4:4:4 Lossless profile，
+# 许多硬件/软件解码器不支持。改用 -qp 1 配合标准 profile，对单色填充
+# 仍是 bit-exact（下方验证），兼容性显著提升。
 case $CODEC in
     h264)
-        CODEC_ARGS=(-qp 0)
+        CODEC_ARGS=(-qp 1 -profile:v "$H264_PROFILE")
         ;;
     h265)
         X265_PARAMS="lossless=1:colorprim=${COLOR_PRIMARIES}:transfer=${COLOR_TRC}:colormatrix=${COLORSPACE}:range=limited"
