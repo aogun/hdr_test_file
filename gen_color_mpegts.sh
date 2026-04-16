@@ -17,6 +17,7 @@ DURATION=5
 RESOLUTION="1080p"
 OUTPUT=""
 FPS=24
+MODE="sdr"
 
 usage() {
     echo "用法: $0 [选项]"
@@ -29,6 +30,7 @@ usage() {
     echo "  -c, --codec <编码>        h264 或 h265（默认: h264）"
     echo "  -d, --duration <时长>     时长秒数（默认: 5）"
     echo "  -r, --resolution <分辨率> 4k/1080p/720p（默认: 1080p）"
+    echo "  -m, --mode <HDR模式>      sdr/pq/hlg（默认: sdr）"
     echo "  -o, --output <输出文件>   输出文件名（默认: auto）"
     echo "  -h, --help                显示帮助"
     exit 1
@@ -45,6 +47,7 @@ while [[ $# -gt 0 ]]; do
         -c|--codec)      CODEC="$2"; shift 2 ;;
         -d|--duration)   DURATION="$2"; shift 2 ;;
         -r|--resolution) RESOLUTION="$2"; shift 2 ;;
+        -m|--mode)       MODE="$2"; shift 2 ;;
         -o|--output)     OUTPUT="$2"; shift 2 ;;
         -h|--help)       usage ;;
         *) echo "未知选项: $1"; usage ;;
@@ -70,6 +73,35 @@ esac
 case $RESOLUTION in
     4k|1080p|720p) ;;
     *) echo "错误: resolution 必须是 4k/1080p/720p"; exit 1 ;;
+esac
+
+case $MODE in
+    sdr|pq|hlg) ;;
+    *) echo "错误: mode 必须是 sdr/pq/hlg"; exit 1 ;;
+esac
+
+# HDR 模式警告：PQ/HLG 标准要求 10-bit
+if [[ "$MODE" != "sdr" && "$BIT_DEPTH" != "10" ]]; then
+    echo "警告: ${MODE^^} 模式推荐使用 10-bit（当前: ${BIT_DEPTH}-bit）" >&2
+fi
+
+# HDR 模式到色彩元数据的映射
+case $MODE in
+    sdr)
+        COLOR_PRIMARIES="bt709"
+        COLOR_TRC="bt709"
+        COLORSPACE="bt709"
+        ;;
+    pq)
+        COLOR_PRIMARIES="bt2020"
+        COLOR_TRC="smpte2084"
+        COLORSPACE="bt2020nc"
+        ;;
+    hlg)
+        COLOR_PRIMARIES="bt2020"
+        COLOR_TRC="arib-std-b67"
+        COLORSPACE="bt2020nc"
+        ;;
 esac
 
 # 根据位深设置YUV默认值和范围上限
@@ -123,15 +155,28 @@ case $CODEC in
     h265) ENCODER="libx265" ;;
 esac
 
-# 无损编码参数（数组形式，避免 word-splitting 歧义）
+# 无损编码 + HDR元数据（x265需通过 x265-params 保证元数据写入码流）
 case $CODEC in
-    h264) LOSSLESS_ARGS=(-qp 0) ;;
-    h265) LOSSLESS_ARGS=(-x265-params lossless=1) ;;
+    h264)
+        CODEC_ARGS=(-qp 0)
+        ;;
+    h265)
+        X265_PARAMS="lossless=1:colorprim=${COLOR_PRIMARIES}:transfer=${COLOR_TRC}:colormatrix=${COLORSPACE}:range=limited"
+        CODEC_ARGS=(-x265-params "$X265_PARAMS")
+        ;;
 esac
+
+# 通用色彩元数据（VUI）—— 同时作用于 x264/x265
+COLOR_ARGS=(
+    -color_primaries "$COLOR_PRIMARIES"
+    -color_trc "$COLOR_TRC"
+    -colorspace "$COLORSPACE"
+    -color_range tv
+)
 
 # 生成默认输出文件名
 if [[ -z "$OUTPUT" ]]; then
-    OUTPUT="color_Y${Y_VAL}_U${U_VAL}_V${V_VAL}_${SAMPLING}_${BIT_DEPTH}bit_${CODEC}_${DURATION}s.ts"
+    OUTPUT="color_Y${Y_VAL}_U${U_VAL}_V${V_VAL}_${SAMPLING}_${BIT_DEPTH}bit_${MODE}_${CODEC}_${DURATION}s.ts"
 fi
 
 TOTAL_FRAMES=$((FPS * DURATION))
@@ -146,6 +191,7 @@ echo "采样:   ${SAMPLING} (${PIX_FMT})"
 echo "位深:   ${BIT_DEPTH}-bit"
 echo "YUV值:  Y=${Y_VAL}, U=${U_VAL}, V=${V_VAL}"
 echo "编码:   ${CODEC} (无损)"
+echo "模式:   ${MODE^^} (primaries=${COLOR_PRIMARIES}, trc=${COLOR_TRC}, matrix=${COLORSPACE})"
 echo "输出:   ${OUTPUT}"
 echo ""
 
@@ -186,7 +232,8 @@ for _ in range(N):
     -c:v "$ENCODER" \
     -g "$GOP" \
     -bf 0 \
-    "${LOSSLESS_ARGS[@]}" \
+    "${CODEC_ARGS[@]}" \
+    "${COLOR_ARGS[@]}" \
     -preset ultrafast \
     -f mpegts \
     -y "$OUTPUT"
